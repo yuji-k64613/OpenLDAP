@@ -1,5 +1,6 @@
 package com.sample;
 
+import java.io.IOException;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import javax.naming.Context;
@@ -10,6 +11,7 @@ import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
 import javax.naming.directory.SearchControls;
 import javax.naming.directory.SearchResult;
+import javax.naming.ldap.*;
 
 // http://d.hatena.ne.jp/end0tknr/20150319/1426716347
 // http://blog.livedoor.jp/k_shin_pro/archives/43631076.html
@@ -20,7 +22,8 @@ import javax.naming.directory.SearchResult;
  * Created by konishiyuji on 2016/07/01.
  */
 public class Search {
-    private DirContext ctx;
+    //    private DirContext ctx;
+    private LdapContext ctx;
 
     public static void main(String[] args) {
         Search lt = new Search();
@@ -31,8 +34,16 @@ public class Search {
             return;
         }
 
-        lt.search("ou=People,dc=test,dc=local",
-                "(|(cn=Foo)(cn=Taro))"); // OR検索
+        String[] attrs = new String[]{"cn"};
+
+        Object[] param = new String[2];
+        param[0] = "Foo";
+        param[1] = "Taro";
+
+        lt.search("ou=People,dc=test,dc=local", attrs,
+                "(|(cn={0})(cn={1}))", param, "cn"); // OR検索
+
+        lt.close();
     }
 
 
@@ -66,7 +77,8 @@ public class Search {
             //デバッグを全て
             env.put("com.sun.jndi.connect.pool.debug", "all");
 
-            ctx = new InitialDirContext(env);
+//            ctx = new InitialDirContext(env);
+            ctx = new InitialLdapContext(env, null);
         } catch (Exception e) {
             e.printStackTrace();
             if (ctx == null) return false;
@@ -92,31 +104,68 @@ public class Search {
         }
     }
 
-    public void search(String baseDn, String filter) {
+    public void search(String baseDn, String[] attrs, String filter, Object[] args, String sortKey) {
         SearchControls searchControls = new SearchControls();
-
         searchControls.setSearchScope(SearchControls.SUBTREE_SCOPE);
+        searchControls.setReturningAttributes(attrs);
+
+//        SortControl sortControls = null;
+//        try {
+//            sortControls = new SortControl(sortKey, Control.CRITICAL);
+//            ctx.setRequestControls(new Control[]{sortControls});
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        } catch (NamingException e) {
+//            e.printStackTrace();
+//        }
+
         try {
-            NamingEnumeration<SearchResult> result =
-                    ctx.search(baseDn, filter, searchControls);
+            int pageSize = 1;
+            byte[] cookie = null;
+            ctx.setRequestControls(new Control[]{
+                    new PagedResultsControl(pageSize, Control.CRITICAL)});
+            do {
+                NamingEnumeration<SearchResult> result =
+                        ctx.search(baseDn, filter, args, searchControls);
 
-            // エントリを1件ずつ処理
-            while (result.hasMore()) { //エントリ毎に処理
-                System.out.println("----------------------------------");
-                SearchResult sr = result.next(); //エントリ取得
-                NamingEnumeration attributes = sr.getAttributes().getAll();
+                // エントリを1件ずつ処理
+                while (result.hasMore()) { //エントリ毎に処理
+                    System.out.println("----------------------------------");
+                    SearchResult sr = result.next(); //エントリ取得
+                    NamingEnumeration attributes = sr.getAttributes().getAll();
 
-                while (attributes.hasMore()) { //エントリの各属性を処理
-                    Attribute attr = (Attribute) attributes.nextElement();
-                    Enumeration values = attr.getAll();
-                    while (values.hasMoreElements()) {
-                        System.out.println(attr.getID() + "="
-                                + values.nextElement());
+                    while (attributes.hasMore()) { //エントリの各属性を処理
+                        Attribute attr = (Attribute) attributes.nextElement();
+                        Enumeration values = attr.getAll();
+                        while (values.hasMoreElements()) {
+                            System.out.println(attr.getID() + "="
+                                    + values.nextElement());
+                        }
                     }
                 }
+
+                cookie = null;
+                Control[] controls = ctx.getResponseControls();
+                if (controls != null) {
+                    for (int i = 0; i < controls.length; i++) {
+                        if (controls[i] instanceof PagedResultsResponseControl) {
+                            PagedResultsResponseControl prrc =
+                                    (PagedResultsResponseControl) controls[i];
+                            cookie = prrc.getCookie();
+                        } else {
+                            // Handle other response controls (if any)
+                        }
+                    }
+                }
+                ctx.setRequestControls(new Control[]{
+                        new PagedResultsControl(pageSize, cookie, Control.CRITICAL)});
             }
+            while (cookie != null);
         } catch (NamingException e) {
             e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+
     }
 }

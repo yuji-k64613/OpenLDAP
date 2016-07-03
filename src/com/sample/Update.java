@@ -22,7 +22,9 @@ public class Update {
             return;
         }
 
-        lt.update("cn=Foo,ou=People,dc=test,dc=local", "Updated");
+        //lt.update("cn=Foo,ou=People,dc=test,dc=local", "Updated");
+        lt.add("cn=user,ou=People,dc=test,dc=local", "user", "name");
+        lt.close();
     }
 
 
@@ -86,10 +88,29 @@ public class Update {
         ModificationItem[] mods = new ModificationItem[1];
 
         Attribute attrSn = new BasicAttribute("sn", str);
+        // 追加、削除、置換を指定する
         mods[0] = new ModificationItem(DirContext.REPLACE_ATTRIBUTE, attrSn);
 
         try {
-            ctx.modifyAttributes( baseDn , mods );
+            ctx.modifyAttributes(baseDn, mods);
+        } catch (NamingException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void add(String baseDn, String name, String user) {
+        Attribute objClasses = new BasicAttribute("objectclass");
+        objClasses.add("person");
+
+        Attribute cn = new BasicAttribute("cn", user);
+        Attribute sn = new BasicAttribute("sn", name);
+        Attributes orig = new BasicAttributes();
+        orig.put(objClasses);
+        orig.put(cn);
+        orig.put(sn);
+
+        try {
+            ctx.createSubcontext(baseDn, orig);
         } catch (NamingException e) {
             e.printStackTrace();
         }
